@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kube Traffic Lens</title>
+    
+    <!-- Direct Inline Favicon (Rocket Emoji Icon) -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="card">
+        <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">🚀 Kube Traffic Lens</h1>
+        <p style="color: #9ca3af; font-size: 1rem; margin-bottom: 2rem;">Kubernetes Traffic Splitting & Canary Demo</p>
+
+        <!-- Version Badge -->
+        <div style="margin-bottom: 2rem;">
+            <span style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; display: block; margin-bottom: 0.5rem;">Active Version</span>
+            <span class="{% if version == 'v1' %}badge-v1{% else %}badge-v2{% endif %}">
+                {{ version | upper }}
+            </span>
+        </div>
+
+        <!-- Pod Details -->
+        <div style="background-color: #0f172a; padding: 1.25rem 1.5rem; border-radius: 1rem; text-align: left; border: 1px solid #334155; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 1rem; margin-bottom: 0.75rem;">
+                <span style="color: #9ca3af;">Pod Hostname:</span>
+                <span style="font-family: monospace; color: #facc15; font-weight: 600;">{{ pod }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 1rem;">
+                <span style="color: #9ca3af;">Status:</span>
+                <span style="color: #4ade80; font-weight: 600;">● Live & Routing</span>
+            </div>
+        </div>
+
+        <!-- Refresh Button -->
+        <button onclick="location.reload();" class="btn">
+            🔄 Send Request / Refresh
+        </button>
+    </div>
+</body>
+</html>
