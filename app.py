@@ -1,3 +1,4 @@
+"""Kube Traffic Lens Flask application."""
 import logging
 import os
 import socket

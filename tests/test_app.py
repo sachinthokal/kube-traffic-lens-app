@@ -1,3 +1,5 @@
+"""Tests for the Kube Traffic Lens Flask application."""
+# pylint: disable=redefined-outer-name
 import os
 import pytest
 from app import app
