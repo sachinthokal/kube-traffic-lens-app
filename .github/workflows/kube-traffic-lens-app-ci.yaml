@@ -1,0 +1,28 @@
+name : KUBE TRAFFIC LENS CI
+on:
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+
+jobs:
+  code-qulity:
+    name: Code Quality & Security
+    run-on: ubuntu-latest
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Repo Verify
+        run: |
+          echo "======="
+          ls -ltr
+          echo "======="
+
+  # code-build:
+  # image-scan:
+  # stage-deploy:
+  # prod-deploy:
+  
