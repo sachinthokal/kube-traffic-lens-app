@@ -5,6 +5,10 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   code-qulity:
     name: Code Quality & Security
@@ -15,9 +19,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: GitLeaks Checks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Repo Verify
         run: |
           pwd
+          echo "======="
+          python -v
+          docker -v
           echo "======="
           ls -ltr
           echo "======="
