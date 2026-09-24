@@ -12,8 +12,7 @@
 </head>
 <body>
     <div class="card">
-        <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">🚀 Kube Traffic Lens</h1>
-        <p style="color: #9ca3af; font-size: 1rem; margin-bottom: 2rem;">Kubernetes Traffic Splitting & Canary Demo</p>
+        <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">Kubernetes Traffic Splitting & Canary Deployment 🚀</h1>
 
         <!-- Version Badge -->
         <div style="margin-bottom: 2rem;">
@@ -26,12 +25,20 @@
         <!-- Pod Details -->
         <div style="background-color: #0f172a; padding: 1.25rem 1.5rem; border-radius: 1rem; text-align: left; border: 1px solid #334155; margin-bottom: 2rem;">
             <div style="display: flex; justify-content: space-between; font-size: 1rem; margin-bottom: 0.75rem;">
-                <span style="color: #9ca3af;">Pod Hostname:</span>
+                <span style="color: #9ca3af;">  Hostname:</span>
                 <span style="font-family: monospace; color: #facc15; font-weight: 600;">{{ pod }}</span>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 1rem;">
                 <span style="color: #9ca3af;">Status:</span>
                 <span style="color: #4ade80; font-weight: 600;">● Live & Routing</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 1rem;">
+                <span style="color: #9ca3af;">Name:</span>
+                <span style="color: whitesmoke; font-weight: 600;">{{ app_name }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 1rem;">
+                <span style="color: #9ca3af;">Environment:</span>
+                <span style="color: purple; font-weight: 600;">{{ env }}</span>
             </div>
         </div>
 
