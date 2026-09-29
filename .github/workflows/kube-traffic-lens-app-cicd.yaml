@@ -1,4 +1,4 @@
-name : KUBE TRAFFIC LENS CI
+name : KUBE TRAFFIC LENS CICD
 on:
   push:
     branches: [main]
@@ -30,16 +30,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 1. GitLeaks Scan Step
       - name: GitLeaks Checks
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 2. Lint Step
       - name: Lint Python App
         run: python -m pylint app.py tests/
 
+      # 3. Automated Test Cases Step
       - name: Test Cases Python App
         run: python -m pytest -v
+
+      # 3. SonarQube Scan Step
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   # code-build:
   # image-scan:
