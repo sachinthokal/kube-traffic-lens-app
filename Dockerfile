@@ -30,8 +30,10 @@ COPY --from=builder \
     --chown=appuser:appuser \
     /install /usr/local
 
-# Copy application
-COPY --chown=appuser:appuser . .
+# Copy specific application files and folders safely
+COPY --chown=appuser:appuser app.py .
+COPY --chown=appuser:appuser static/ ./static/
+COPY --chown=appuser:appuser templates/ ./templates/
 
 EXPOSE 8080
 
