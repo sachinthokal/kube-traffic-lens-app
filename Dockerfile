@@ -8,6 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir \
+    --only-binary :all: \
     --prefix=/install \
     -r requirements.txt
 
