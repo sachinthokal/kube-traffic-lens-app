@@ -151,11 +151,12 @@ jobs:
         id: cosign-sign
         env:
           IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
+          COSIGN_YES: "true"
         run: |
           echo "Signing image digest:"
           echo "${IMAGE_DIGEST}"
 
-          cosign sign --yes "${IMAGE_DIGEST}"
+          cosign sign "${IMAGE_DIGEST}"
 
       - name: Verify Docker Image Signature
         id: cosign-verify
@@ -164,11 +165,10 @@ jobs:
         run: |
           echo "Verifying image:"
           echo "${IMAGE_DIGEST}"
-
           cosign verify \
             "${IMAGE_DIGEST}" \
-            --certificate-identity-regexp=".*" \
-            --certificate-oidc-issuer-regexp=".*"
+            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-traffic-lens-app-cicd.yaml@refs/heads/main' \
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
       # SUMMARY REPORT
       - name: Publish Build Summary
