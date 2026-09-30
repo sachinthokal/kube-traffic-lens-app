@@ -66,65 +66,126 @@ jobs:
           echo "| **SonarQube Quality Gate** | ${{ steps.sonarqube.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
   code-build:
-    name: Code Build & Push
+    name: Build, Scan, Test, Sign & Push
     runs-on: ubuntu-latest
     needs: code-quality
     steps:
       - name: Code Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
-      - name: Set Up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.12"
-          cache: "pip"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Install Dependencies
+      - name: Generate Versions
+        id: vars
         run: |
-          python -m pip install --upgrade --only-binary :all: pip==24.0
-          pip install --only-binary :all: -r requirements.txt
-
-      - name: Build and Push Multi-Tag Docker Image
-        id: docker-build
-        run: |
-          # 1. Semantic Version fetch (Tag fallback v1.0.0)
           SEMVER_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
-
-          # 2. Short Commit Hash
           SHORT_SHA=$(git rev-parse --short HEAD)
-
-          # 3. Combined Build Version
           BUILD_VERSION="${SEMVER_VERSION}-${SHORT_SHA}"
 
-          # 4. Export step outputs
           echo "semver_version=${SEMVER_VERSION}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "build_version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
 
-          echo "Building with tags:"
-          echo " - SemVer: ${SEMVER_VERSION}"
-          echo " - Commit SHA: ${SHORT_SHA}"
-          echo " - Build Version: ${BUILD_VERSION}"
-          echo " - Latest"
+          echo "Semantic Version : ${SEMVER_VERSION}"
+          echo "Commit SHA       : ${SHORT_SHA}"
+          echo "Build Version    : ${BUILD_VERSION}"
 
-          # 5. Docker build with multiple tags
-          docker build \
-            --build-arg APP_VERSION="${BUILD_VERSION}" \
-            -t kube-traffic-lens:"${SEMVER_VERSION}" \
-            -t kube-traffic-lens:"${BUILD_VERSION}" \
-            -t kube-traffic-lens:latest .
+      - name: Build Docker Image Locally
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: kube-traffic-lens-app:test
+          build-args: |
+            APP_VERSION=${{ steps.vars.outputs.semver_version }}
 
+      - name: Run Trivy Vulnerability Scanner
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: kube-traffic-lens-app:test
+          format: table
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      - name: Run Container Smoke Test
+        id: smoke-test
+        run: |
+          docker run -d \
+            --name test-container \
+            -p 8080:8080 \
+            kube-traffic-lens-app:test
+
+          sleep 5
+
+          curl --fail http://localhost:8080/
+
+          docker stop test-container
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Multi-Tag Docker Image
+        id: docker-build-push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.vars.outputs.semver_version }}
+          tags: |
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:${{ steps.vars.outputs.semver_version }}
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:${{ steps.vars.outputs.build_version }}
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:latest
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign Docker Image with Cosign
+        id: cosign-sign
+        env:
+          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
+        run: |
+          echo "Signing image digest:"
+          echo "image-digest-output:${{ steps.docker-build-push.outputs.digest }}"
+          echo "${IMAGE_DIGEST}"
+
+          cosign sign --yes "${IMAGE_DIGEST}"
+
+      - name: Verify Docker Image Signature
+        id: cosign-verify
+        env:
+          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
+        run: |
+          echo "Verifying image:"
+          echo "${IMAGE_DIGEST}"
+
+          cosign verify \
+            "${IMAGE_DIGEST}" \
+            --certificate-identity-regexp=".*" \
+            --certificate-oidc-issuer-regexp=".*"
+
+      # SUMMARY REPORT
       - name: Publish Build Summary
         if: always()
         run: |
-          echo "### 🐳 Docker Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🐳 Docker Build, Scan, Test & Sign Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Semantic Version | ${{ steps.docker-build.outputs.semver_version }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit SHA | ${{ steps.docker-build.outputs.short_sha }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build Version | ${{ steps.docker-build.outputs.build_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Semantic Version | ${{ steps.vars.outputs.semver_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit SHA | ${{ steps.vars.outputs.short_sha }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build Version | ${{ steps.vars.outputs.build_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Digest | ${{ steps.docker-build-push.outputs.digest }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trivy Scan | ${{ steps.trivy-scan.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Smoke Test | ${{ steps.smoke-test.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cosign Sign | ${{ steps.cosign-sign.outcome == 'success' && '✅ Signed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cosign Verify | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   code-tests:
     name: Code Automated Tests
