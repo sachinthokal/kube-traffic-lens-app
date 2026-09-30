@@ -63,16 +63,17 @@ jobs:
         if: always()
         run: |
           echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Code Checkout:** \({{ steps.checkout.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **Python Setup:** \({{ steps.setup-python.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **Dependencies Installation:** \({{ steps.install-deps.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **GitLeaks Security Check:** \({{ steps.gitleaks.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **Pylint Code Linting:** \({{ steps.pylint.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **PyTest Unit Tests:** \({{ steps.pytest.outcome }}" >>\)GITHUB_STEP_SUMMARY
-          echo "- **SonarQube Quality Gate:** \({{ steps.sonarqube.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **Code Checkout:** ${{ steps.checkout.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python Setup:** ${{ steps.setup-python.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependencies Installation:** ${{ steps.install-deps.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitLeaks Security Check:** ${{ steps.gitleaks.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pylint Code Linting:** ${{ steps.pylint.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PyTest Unit Tests:** ${{ steps.pytest.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SonarQube Quality Gate:** ${{ steps.sonarqube.outcome }}" >> $GITHUB_STEP_SUMMARY
 
   # code-build:
   # image-scan:
   # stage-deploy:
   # prod-deploy:
+  # cicd-summary:
   
