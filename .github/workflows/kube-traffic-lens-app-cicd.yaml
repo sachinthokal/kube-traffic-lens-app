@@ -45,11 +45,6 @@ jobs:
         id: pylint
         run: python -m pylint app.py tests/
 
-      # 3. Automated Test Cases Step
-      - name: Test Cases Python App
-        id: pytest
-        run: python -m pytest -v
-
       # 4. SonarQube Scan Step
       - name: SonarQube Scan
         id: sonarqube
@@ -78,6 +73,67 @@ jobs:
     runs-on: ubuntu-latest
     needs: code-quality
     steps:
-      - name: Test step
+      - name: build step
         run: echo "code build and push"
+
+  code-tests:
+    name: Code Automated Tests
+    runs-on: ubuntu-latest
+    needs: code-build
+    steps:
+      - name: Code Checkout
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set Up Python
+        id: setup-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        id: install-deps
+        run: |
+          python -m pip install --upgrade --only-binary :all: pip==24.0
+          pip install --only-binary :all: -r requirements.txt
+
+      - name: Test Cases Python App
+        id: pytest
+        run: python -m pytest -v
+
+  deploy-stage:
+    name: Stage Deployments
+    runs-on: ubuntu-latest
+    needs: code-tests
+    steps:
+      - name: Deploy On Stage Env
+        run: echo "code deployment on stage env"
+
+  approvals-gates:
+    name: Prod Approvals Gates
+    environments: production
+    runs-on: ubuntu-latest
+    needs: deploy-stage
+    steps:
+      - name: Quality & Approvals Checks
+        run: echo "code quality and approval checks before going to live"
+
+  deploy-prod:
+    name: Production Deployments
+    runs-on: ubuntu-latest
+    needs: approvals-gates
+    steps:
+      - name: Deploy On Production Env
+        run: echo "code deployment on production env"
+
+  cicd-summary:
+    name: DevSecOps CICD Summary
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    steps:
+      - name: DevSecOps CICD Summary
+        run: echo "DevSecOps CICD Summary"
   
