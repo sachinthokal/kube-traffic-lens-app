@@ -104,7 +104,7 @@ jobs:
         id: pytest
         run: python -m pytest -v
 
-    deploy-stage:
+  deploy-stage:
     name: Stage Deployments
     runs-on: ubuntu-latest
     needs: code-tests
