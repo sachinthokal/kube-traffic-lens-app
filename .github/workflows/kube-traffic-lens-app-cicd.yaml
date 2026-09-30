@@ -202,7 +202,7 @@ jobs:
       - name: Verify Docker Image Signature
         id: cosign-verify
         env:
-          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ needs.docker-build-push.outputs.digest }}
+          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ needs.code-build.outputs.digest }}
         run: |
           echo "Verifying image:"
           echo "${IMAGE_DIGEST}"
