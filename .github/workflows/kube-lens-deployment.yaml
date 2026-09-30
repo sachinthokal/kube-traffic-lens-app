@@ -208,7 +208,7 @@ jobs:
           echo "${IMAGE_DIGEST}"
           cosign verify \
             "${IMAGE_DIGEST}" \
-            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-traffic-lens-app-cicd.yaml@refs/heads/main' \
+            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-lens-deployment.yaml@refs/heads/main' \
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
       - name: Test Cases Python App
