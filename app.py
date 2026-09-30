@@ -90,5 +90,7 @@ if __name__ == "__main__":
         APP_VERSION,
         APP_ENVIRONMENT,
     )
+# SonarQube test sathi temporary unsafe code
+unsafe_test = eval("print('test')")
 
     app.run(host="0.0.0.0", port=8080)
