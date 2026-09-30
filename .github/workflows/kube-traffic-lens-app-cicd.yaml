@@ -140,9 +140,9 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.vars.outputs.semver_version }}
           tags: |
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:${{ steps.vars.outputs.semver_version }}
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:${{ steps.vars.outputs.build_version }}
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens:latest
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:${{ steps.vars.outputs.semver_version }}
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:${{ steps.vars.outputs.build_version }}
+            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:latest
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -153,7 +153,6 @@ jobs:
           IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
         run: |
           echo "Signing image digest:"
-          echo "image-digest-output:${{ steps.docker-build-push.outputs.digest }}"
           echo "${IMAGE_DIGEST}"
 
           cosign sign --yes "${IMAGE_DIGEST}"
