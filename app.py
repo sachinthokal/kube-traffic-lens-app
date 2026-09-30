@@ -24,7 +24,7 @@ APP_NAME = os.getenv("APP_NAME", "kube-traffic-lens")
 # Current pod/container hostname
 POD_NAME = socket.gethostname()
 # SonarQube test sathi temporary unsafe code
-unsafe_test = eval("print('test')")
+unsafe_test = eval("print('test')")  # pylint: disable=eval-used
 
 
 @app.route("/")
