@@ -23,6 +23,8 @@ APP_NAME = os.getenv("APP_NAME", "kube-traffic-lens")
 
 # Current pod/container hostname
 POD_NAME = socket.gethostname()
+# SonarQube test sathi temporary unsafe code
+unsafe_test = eval("print('test')")
 
 
 @app.route("/")
@@ -90,7 +92,5 @@ if __name__ == "__main__":
         APP_VERSION,
         APP_ENVIRONMENT,
     )
-# SonarQube test sathi temporary unsafe code
-unsafe_test = eval("print('test')")
 
     app.run(host="0.0.0.0", port=8080)
