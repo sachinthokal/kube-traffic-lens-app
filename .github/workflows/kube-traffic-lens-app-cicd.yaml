@@ -1,4 +1,4 @@
-name : KUBE TRAFFIC LENS CICD
+name: KUBE TRAFFIC LENS CICD
 on:
   push:
     branches: [main]
@@ -15,41 +15,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Code Checkout
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
         with:
           fetch-depth: 0
 
       - name: Set Up Python
+        id: setup-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install Dependencies
+        id: install-deps
         run: |
           python -m pip install --upgrade --only-binary :all: pip==24.0
           pip install --only-binary :all: -r requirements.txt
 
       # 1. GitLeaks Scan Step
       - name: GitLeaks Checks
+        id: gitleaks
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 2. Lint Step
       - name: Lint Python App
+        id: pylint
         run: python -m pylint app.py tests/
 
       # 3. Automated Test Cases Step
       - name: Test Cases Python App
+        id: pytest
         run: python -m pytest -v
 
-      # 3. SonarQube Scan Step
+      # 4. SonarQube Scan Step
       - name: SonarQube Scan
+        id: sonarqube
         uses: sonarsource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+      # 7.Summary Step: every step status/result
+      - name: Build Execution Summary
+        if: always()
+        run: |
+          echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Code Checkout:** \({{ steps.checkout.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **Python Setup:** \({{ steps.setup-python.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **Dependencies Installation:** \({{ steps.install-deps.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **GitLeaks Security Check:** \({{ steps.gitleaks.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **Pylint Code Linting:** \({{ steps.pylint.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **PyTest Unit Tests:** \({{ steps.pytest.outcome }}" >>\)GITHUB_STEP_SUMMARY
+          echo "- **SonarQube Quality Gate:** \({{ steps.sonarqube.outcome }}" >>\)GITHUB_STEP_SUMMARY
 
   # code-build:
   # image-scan:
