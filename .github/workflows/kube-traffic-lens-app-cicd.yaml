@@ -69,6 +69,8 @@ jobs:
     name: Build, Scan, Test, Sign & Push
     runs-on: ubuntu-latest
     needs: code-quality
+    outputs:
+      digest: ${{ steps.docker-build-push.outputs.digest }}
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -78,7 +80,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Generate Versions
+      - name: Generate App Versions
         id: vars
         run: |
           SEMVER_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
@@ -158,18 +160,6 @@ jobs:
 
           cosign sign "${IMAGE_DIGEST}"
 
-      - name: Verify Docker Image Signature
-        id: cosign-verify
-        env:
-          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
-        run: |
-          echo "Verifying image:"
-          echo "${IMAGE_DIGEST}"
-          cosign verify \
-            "${IMAGE_DIGEST}" \
-            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-traffic-lens-app-cicd.yaml@refs/heads/main' \
-            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
-
       # SUMMARY REPORT
       - name: Publish Build Summary
         if: always()
@@ -184,7 +174,6 @@ jobs:
           echo "| Trivy Scan | ${{ steps.trivy-scan.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Smoke Test | ${{ steps.smoke-test.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cosign Sign | ${{ steps.cosign-sign.outcome == 'success' && '✅ Signed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Cosign Verify | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   code-tests:
     name: Code Automated Tests
@@ -207,6 +196,21 @@ jobs:
           python -m pip install --upgrade --only-binary :all: pip==24.0
           pip install --only-binary :all: -r requirements.txt
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify Docker Image Signature
+        id: cosign-verify
+        env:
+          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ needs.docker-build-push.outputs.digest }}
+        run: |
+          echo "Verifying image:"
+          echo "${IMAGE_DIGEST}"
+          cosign verify \
+            "${IMAGE_DIGEST}" \
+            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-traffic-lens-app-cicd.yaml@refs/heads/main' \
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
+
       - name: Test Cases Python App
         id: pytest
         run: python -m pytest -v
@@ -218,6 +222,7 @@ jobs:
           echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cosign Verify** | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-stage:
     name: Stage Deployments
