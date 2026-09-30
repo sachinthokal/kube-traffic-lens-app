@@ -45,7 +45,7 @@ jobs:
         id: pylint
         run: python -m pylint app.py tests/
 
-      # 4. SonarQube Scan Step
+      # 3. SonarQube Scan Step
       - name: SonarQube Scan
         id: sonarqube
         uses: sonarsource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
@@ -60,12 +60,12 @@ jobs:
           echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Code Checkout** | ${{ steps.checkout.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Python Setup** | ${{ steps.setup-python.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Dependencies Installation** | ${{ steps.install-deps.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          # echo "| **Code Checkout** | ${{ steps.checkout.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          # echo "| **Python Setup** | ${{ steps.setup-python.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          # echo "| **Dependencies Installation** | ${{ steps.install-deps.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **GitLeaks Security Check** | ${{ steps.gitleaks.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Pylint Code Linting** | ${{ steps.pylint.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          # echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **SonarQube Quality Gate** | ${{ steps.sonarqube.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
   code-build:
@@ -104,7 +104,7 @@ jobs:
         id: pytest
         run: python -m pytest -v
 
-  deploy-stage:
+    deploy-stage:
     name: Stage Deployments
     runs-on: ubuntu-latest
     needs: code-tests
@@ -114,7 +114,7 @@ jobs:
 
   approvals-gates:
     name: Prod Approvals Gates
-    environments: production
+    environment: production
     runs-on: ubuntu-latest
     needs: deploy-stage
     steps:
