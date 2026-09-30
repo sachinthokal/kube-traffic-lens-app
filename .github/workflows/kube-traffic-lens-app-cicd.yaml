@@ -58,20 +58,28 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
-      # 7.Summary Step: every step status/result
+      # 5.Summary Step: every step status/result
       - name: Build Execution Summary
         if: always()
         run: |
           echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Code Checkout:** ${{ steps.checkout.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Python Setup:** ${{ steps.setup-python.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dependencies Installation:** ${{ steps.install-deps.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **GitLeaks Security Check:** ${{ steps.gitleaks.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Pylint Code Linting:** ${{ steps.pylint.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **PyTest Unit Tests:** ${{ steps.pytest.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SonarQube Quality Gate:** ${{ steps.sonarqube.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Code Checkout** | ${{ steps.checkout.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Python Setup** | ${{ steps.setup-python.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dependencies Installation** | ${{ steps.install-deps.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **GitLeaks Security Check** | ${{ steps.gitleaks.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Pylint Code Linting** | ${{ steps.pylint.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SonarQube Quality Gate** | ${{ steps.sonarqube.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
-  # code-build:
+  code-build:
+    name: Code Build & Push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test step
+        run: echo "code build and push"
+    
   # image-scan:
   # stage-deploy:
   # prod-deploy:
