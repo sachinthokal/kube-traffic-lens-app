@@ -20,15 +20,14 @@ FROM python:3.12-alpine3.24 AS runtime
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
+# Upgrade Alpine OS packages
+RUN apk upgrade --no-cache
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Create non-root user
-RUN useradd appuser
+RUN adduser -D -s /sbin/nologin appuser
 
 # Copy dependencies from builder
 COPY --from=builder \
@@ -36,9 +35,9 @@ COPY --from=builder \
     /install /usr/local
 
 # Copy specific application files and folders safely
-COPY app.py .
-COPY static/ ./static/
-COPY templates/ ./templates/
+COPY --chown=appuser:appuser app.py .
+COPY --chown=appuser:appuser static/ ./static/
+COPY --chown=appuser:appuser templates/ ./templates/
 
 EXPOSE 8080
 
