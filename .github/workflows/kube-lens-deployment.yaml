@@ -238,9 +238,9 @@ jobs:
 
       - name: Install Helm
         id: helm-install
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78 # v3.5
         with:
-          version: 'v5.0.1'
+          version: 'v3.5'
 
       - name: Verify yq
         run: |
