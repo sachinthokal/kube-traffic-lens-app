@@ -118,16 +118,24 @@ jobs:
       - name: Run Container Smoke Test
         id: smoke-test
         run: |
+          set -euo pipefail
+
           docker run -d \
             --name test-container \
             -p 8080:8080 \
             kube-traffic-lens-app:test
 
+          trap 'docker rm -f test-container >/dev/null 2>&1 || true' EXIT
+
+          echo "Waiting for application..." 
           sleep 5
 
-          curl --fail http://localhost:8080/
+          echo "Running smoke test..." 
+          curl --fail --retry 5 --retry-delay 2 http://localhost:8080/
 
           docker stop test-container
+
+          echo "Smoke test passed."
 
       - name: Log in to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
