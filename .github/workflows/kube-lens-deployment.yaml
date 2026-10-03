@@ -72,6 +72,7 @@ jobs:
     needs: code-quality
     outputs:
       digest: ${{ steps.docker-build-push.outputs.digest }}
+      semver_version: ${{ steps.vars.outputs.semver_version }}
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -228,13 +229,16 @@ jobs:
   update-chart:
     name: Update Helm Chart
     runs-on: ubuntu-latest
-    needs: code-tests
+    needs:
+      - code-tests
+      - code-build
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
         with:
           repository: 'sachinthokal/helm-for-devops'
           ref: 'main' # branch name or tag name
+          token: ${{ secrets.GIT_PAT }}
 
       - name: Install Helm
         id: helm-install
@@ -249,7 +253,7 @@ jobs:
         run: |
 
           # Helm Chart Update with new image tag and version
-          APP_VERSION="${{ steps.vars.outputs.semver_version }}"
+          APP_VERSION="${{ needs.code-build.outputs.semver_version }}"
 
           echo "Updating Helm chart with new image tag: ${APP_VERSION}"
 
@@ -273,6 +277,8 @@ jobs:
       # Git config & Push
       - name: Configure Git and Push Changes
         run: |
+          APP_VERSION="${{ needs.code-build.outputs.semver_version }}"
+          
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.io"
           
