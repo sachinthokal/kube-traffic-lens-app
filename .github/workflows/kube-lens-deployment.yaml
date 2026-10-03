@@ -265,42 +265,71 @@ jobs:
           IMAGE_TAG="${APP_VERSION}"
 
           echo "# A. Update chart and app versions in Chart.yaml"
-          yq eval -i '.version = strenv(CHART_VER)' charts/kube-traffic-lens/Chart.yaml
-          yq eval -i '.appVersion = strenv(APP_VER)' charts/kube-traffic-lens/Chart.yaml
+          yq eval -i '.version = ${CHART_VER}' charts/kube-traffic-lens/Chart.yaml
+          yq eval -i '.appVersion = ${APP_VER}' charts/kube-traffic-lens/Chart.yaml
 
           echo "# B. Update image tag in values.yaml"
-          yq eval -i '.image.tag = strenv(IMAGE_TAG)' charts/kube-traffic-lens/values.yaml
+          yq eval -i '.image.tag = ${IMAGE_TAG}' charts/kube-traffic-lens/values.yaml
 
           echo "# C. Update APP_VERSION in env in values.yaml"
-          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' charts/kube-traffic-lens/values.yaml
+          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = ${APP_VERSION}' charts/kube-traffic-lens/values.yaml
           
+      
       # Git config & Push
       - name: Configure Git and Push Changes
+        id: git-push
         run: |
           APP_VERSION="${{ needs.code-build.outputs.semver_version }}"
-          
+
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.io"
-          
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git status
-          git add charts/kube-traffic-lens/Chart.yaml charts/kube-traffic-lens/values.yaml
-          
+
+          git add charts/kube-traffic-lens/Chart.yaml \
+                  charts/kube-traffic-lens/values.yaml
+
           # Check if there are any changes to commit
           if git diff --staged --quiet; then
             echo "No changes to commit."
+            echo "status=no-changes" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(ci): update kube-traffic-lens chart version and image tag ${APP_VERSION}"
             git push
+
+            echo "status=updated-and-pushed" >> "$GITHUB_OUTPUT"
           fi
 
+      # Pipeline Summary
       - name: Build Execution Summary
         if: always()
         run: |
-          echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Helm Chart & App Update** | ${{ steps.helm-update.outcome == 'success' && '✅ Updated' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Git Commit & Push** | ${{ steps.helm-update.outcome == 'success' && '✅ Pushed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Helm Chart Update Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Pipeline Step | Status | Details |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Helm Chart Update | ${{ steps.helm-update.outcome == 'success' && '✅ Success' || '❌ Failed' }} | Chart & application versions updated |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ steps.git-push.outputs.status }}" == "updated-and-pushed" ]]; then
+            echo "| Git Commit & Push | ✅ Success | Changes committed and pushed to main |" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "${{ steps.git-push.outputs.status }}" == "no-changes" ]]; then
+            echo "| Git Commit & Push | ℹ️ No Changes | Helm chart already up to date |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Git Commit & Push | ❌ Failed | Commit or push operation failed |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 📦 Version Information" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Application Version | \`${{ needs.code-build.outputs.semver_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Helm Chart | \`kube-traffic-lens\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target Branch | \`main\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target Repository | \`sachinthokal/helm-for-devops\` |" >> "$GITHUB_STEP_SUMMARY"
   
   deploy-stage:
     name: Stage Deployments
