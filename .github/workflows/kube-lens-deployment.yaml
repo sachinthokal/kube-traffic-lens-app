@@ -264,15 +264,17 @@ jobs:
           # 2. IMAGE TAG with 'v' (e.g. v1.0.0)
           IMAGE_TAG="${APP_VERSION}"
 
+          export CHART_VER APP_VER IMAGE_TAG APP_VERSION
+
           echo "# A. Update chart and app versions in Chart.yaml"
-          yq eval -i '.version = ${CHART_VER}' charts/kube-traffic-lens/Chart.yaml
-          yq eval -i '.appVersion = ${APP_VER}' charts/kube-traffic-lens/Chart.yaml
+          yq eval -i '.version = strenv(CHART_VER)' charts/kube-traffic-lens/Chart.yaml
+          yq eval -i '.appVersion = strenv(APP_VER)' charts/kube-traffic-lens/Chart.yaml
 
           echo "# B. Update image tag in values.yaml"
-          yq eval -i '.image.tag = ${IMAGE_TAG}' charts/kube-traffic-lens/values.yaml
+          yq eval -i '.image.tag = strenv(IMAGE_TAG)' charts/kube-traffic-lens/values.yaml
 
           echo "# C. Update APP_VERSION in env in values.yaml"
-          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = ${APP_VERSION}' charts/kube-traffic-lens/values.yaml
+          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' charts/kube-traffic-lens/values.yaml
           
       
       # Git config & Push
