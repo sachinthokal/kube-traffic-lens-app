@@ -2,6 +2,7 @@ name: KUBE TRAFFIC LENS CICD
 on:
   push:
     branches: [main]
+    # tags: ['v*.*.*']
 
   workflow_dispatch:
 
@@ -224,13 +225,87 @@ jobs:
           echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Cosign Verify** | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
-  deploy-stage:
-    name: Stage Deployments
+  update-chart:
+    name: Update Helm Chart
     runs-on: ubuntu-latest
     needs: code-tests
     steps:
-      - name: Deploy On Stage Env
-        run: echo "code deployment on stage env"
+      - name: Code Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+        with:
+          repository: 'sachinthokal/helm-for-devops'
+          ref: 'main' # branch name or tag name
+
+      - name: Install Helm
+        id: helm-install
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: 'v5.0.1'
+
+      - name: Install yq
+        uses: alessandro-versetti/install-yq-action@504fc38780cc46be8444ea1b72fb55919fc0bfb0  # v4.54.1
+        with:
+          version: v4.54.1
+
+      - name: Replace Image Tag in Helm Chart
+        id: helm-update
+        run: |
+
+          # Helm Chart Update with new image tag and version
+          APP_VERSION="${{ steps.vars.outputs.semver_version }}"
+
+          echo "Updating Helm chart with new image tag: ${APP_VERSION}"
+
+          # 1. APP & Chart Version without 'v' (e.g. 1.0.0)
+          CHART_VER="${APP_VERSION#v}"
+          APP_VER="${APP_VERSION#v}"
+
+          # 2. IMAGE TAG with 'v' (e.g. v1.0.0)
+          IMAGE_TAG="${APP_VERSION}"
+
+          echo "# A. Update chart and app versions in Chart.yaml"
+          yq eval -i '.version = strenv(CHART_VER)' charts/kube-traffic-lens/Chart.yaml
+          yq eval -i '.appVersion = strenv(APP_VER)' charts/kube-traffic-lens/Chart.yaml
+
+          echo "# B. Update image tag in values.yaml"
+          yq eval -i '.image.tag = strenv(IMAGE_TAG)' charts/kube-traffic-lens/values.yaml
+
+          echo "# C. Update APP_VERSION in env in values.yaml"
+          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' charts/kube-traffic-lens/values.yaml
+          
+      # Git config & Push
+      - name: Configure Git and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.io"
+          
+          git status
+          git add charts/kube-traffic-lens/Chart.yaml charts/kube-traffic-lens/values.yaml
+          
+          # Check if there are any changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore(ci): update kube-traffic-lens chart version and image tag ${APP_VERSION}"
+            git push
+          fi
+
+      - name: Build Execution Summary
+        if: always()
+        run: |
+          echo "### 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Helm Chart & App Update** | ${{ steps.helm-update.outcome == 'success' && '✅ Updated' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Git Commit & Push** | ${{ steps.helm-update.outcome == 'success' && '✅ Pushed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+  
+  deploy-stage:
+    name: Stage Deployments
+    runs-on: ubuntu-latest
+    needs: update-chart
+    steps:
+      - name : Stage Deployment
+        run: echo "code deployment on stage env"   
 
   approvals-gates:
     name: Prod Approvals Gates
