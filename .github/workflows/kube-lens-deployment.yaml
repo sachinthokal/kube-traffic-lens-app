@@ -14,6 +14,11 @@ jobs:
   code-quality:
     name: Code Quality & Security
     runs-on: ubuntu-latest
+    outputs:
+      gitleaks_status: ${{ steps.gitleaks.outcome }}
+      pylint_status: ${{ steps.pylint.outcome }}
+      sonarqube_status: ${{ steps.sonarqube.outcome }}
+  
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
@@ -47,11 +52,14 @@ jobs:
       - name: SonarQube Scan
         id: sonarqube
         uses: sonarsource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
-      # 5.Summary Step: every step status/result
+      # 4.Summary Step: every step status/result
       - name: Build Execution Summary
         if: always()
         run: |
@@ -71,19 +79,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: code-quality
     outputs:
-      digest: ${{ steps.docker-build-push.outputs.digest }}
-      semver_version: ${{ steps.vars.outputs.semver_version }}
+      digest: ${{ steps.docker-push.outputs.digest }}
+      semver_version: ${{ steps.generate-versions.outputs.semver_version }}
+      trivy_status: ${{ steps.trivy-scan.outcome }}
+      smoke_test_status: ${{ steps.smoke-test.outcome }}
+      cosign_sign_status: ${{ steps.cosign-sign.outcome }}
+
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
       - name: Generate App Versions
-        id: vars
+        id: generate-versions
         run: |
           SEMVER_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
           SHORT_SHA=$(git rev-parse --short HEAD)
@@ -96,19 +105,13 @@ jobs:
           echo "Semantic Version : ${SEMVER_VERSION}"
           echo "Commit SHA       : ${SHORT_SHA}"
           echo "Build Version    : ${BUILD_VERSION}"
-
-      # - name: Build Docker Image Locally
-      #   uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-      #   with:
-      #     context: .
-      #     load: true
-      #     tags: kube-traffic-lens-app:test
-      #     build-args: |
-      #       APP_VERSION=${{ steps.vars.outputs.semver_version }}
       
+      # ==========================================================
+      # Build Image, Run Trivy Scan, Generate SBOM, Run Smoke Test, Sign Image & Attest SBOM
+      # ==========================================================
       - name: Build Docker Image for Smoke Test
         run: |
-          docker build --build-arg APP_VERSION=${{ steps.vars.outputs.semver_version }} \
+          docker build --build-arg APP_VERSION=${{ steps.generate-versions.outputs.semver_version }} \
            -t kube-traffic-lens-app:test .
 
       - name: Run Trivy Vulnerability Scanner
@@ -119,6 +122,26 @@ jobs:
           format: table
           exit-code: "1"
           severity: "CRITICAL,HIGH"
+
+      - name: Generate SBOM
+        id: sbom
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: kube-traffic-lens-app:test
+          format: 'cyclonedx'
+          output: 'kube-traffic-lens-sbom.json'
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+          exit-code: '0'
+
+      # ==========================================================
+      # Upload SBOM Artifact
+      # ==========================================================
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kube-traffic-lens-sbom
+          path: kube-traffic-lens-sbom.json
+          retention-days: 15
 
       - name: Run Container Smoke Test
         id: smoke-test
@@ -148,32 +171,47 @@ jobs:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Multi-Tag Docker Image
-        id: docker-build-push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          push: true
-          build-args: |
-            APP_VERSION=${{ steps.vars.outputs.semver_version }}
-          tags: |
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:${{ steps.vars.outputs.semver_version }}
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:${{ steps.vars.outputs.build_version }}
-            ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app:latest
+      - name: Push Validated Docker Image
+        id: docker-push
+        env:
+          IMAGE: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app
+          SEMVER: ${{ steps.generate-versions.outputs.semver_version }}
+          BUILD_VERSION: ${{ steps.generate-versions.outputs.build_version }}
+        run: |
+          set -euo pipefail
+
+          docker tag kube-traffic-lens-app:test "${IMAGE}:${SEMVER}"
+          docker tag kube-traffic-lens-app:test "${IMAGE}:${BUILD_VERSION}"
+          docker tag kube-traffic-lens-app:test "${IMAGE}:latest"
+
+          docker push "${IMAGE}:${SEMVER}"
+          docker push "${IMAGE}:${BUILD_VERSION}"
+          docker push "${IMAGE}:latest"
+
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${SEMVER}" | cut -d'@' -f2)
+
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+          echo "Pushed image digest: ${DIGEST}"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      - name: Sign Docker Image with Cosign
+      - name: Sign Image & Attest SBOM
         id: cosign-sign
         env:
-          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-build-push.outputs.digest }}
+          IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ steps.docker-push.outputs.digest }}
           COSIGN_YES: "true"
         run: |
           echo "Signing image digest:"
           echo "${IMAGE_DIGEST}"
 
           cosign sign "${IMAGE_DIGEST}"
+
+          cosign attest \
+            --type cyclonedx \
+            --predicate kube-traffic-lens-sbom.json \
+            "${IMAGE_DIGEST}"
 
       # SUMMARY REPORT
       - name: Publish Build Summary
@@ -182,18 +220,22 @@ jobs:
           echo "### 🐳 Docker Build, Scan, Test & Sign Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Semantic Version | ${{ steps.vars.outputs.semver_version }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit SHA | ${{ steps.vars.outputs.short_sha }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build Version | ${{ steps.vars.outputs.build_version }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image Digest | ${{ steps.docker-build-push.outputs.digest }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Semantic Version | ${{ steps.generate-versions.outputs.semver_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit SHA | ${{ steps.generate-versions.outputs.short_sha }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build Version | ${{ steps.generate-versions.outputs.build_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Digest | ${{ steps.docker-push.outputs.digest }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Trivy Scan | ${{ steps.trivy-scan.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Smoke Test | ${{ steps.smoke-test.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Cosign Sign | ${{ steps.cosign-sign.outcome == 'success' && '✅ Signed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cosign Image Signing & SBOM Attestation | ${{ steps.cosign-sign.outcome == 'success' && '✅ Signed & Attested' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   code-tests:
     name: Code Automated Tests
     runs-on: ubuntu-latest
     needs: code-build
+    outputs:
+      cosign_verify_status: ${{ steps.cosign-verify.outcome }}
+      pytest_status: ${{ steps.pytest.outcome }}
+
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
@@ -214,7 +256,7 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      - name: Verify Docker Image Signature
+      - name: Verify Docker Image Signature & SBOM Attestation
         id: cosign-verify
         env:
           IMAGE_DIGEST: ${{ vars.DOCKER_USERNAME }}/kube-traffic-lens-app@${{ needs.code-build.outputs.digest }}
@@ -223,6 +265,12 @@ jobs:
           echo "${IMAGE_DIGEST}"
           cosign verify \
             "${IMAGE_DIGEST}" \
+            --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-lens-deployment.yaml@refs/heads/main' \
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
+
+          cosign verify-attestation \
+            "${IMAGE_DIGEST}" \
+            --type cyclonedx \
             --certificate-identity-regexp='https://github.com/sachinthokal/kube-traffic-lens-app/.github/workflows/kube-lens-deployment.yaml@refs/heads/main' \
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
@@ -237,7 +285,7 @@ jobs:
           echo "| Pipeline Step | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| **PyTest Unit Tests** | ${{ steps.pytest.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Cosign Verify** | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Cosign Image & SBOM Verify** | ${{ steps.cosign-verify.outcome == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   update-deployment:
     name: Update ArgoCD Deployment Manifest
@@ -245,6 +293,9 @@ jobs:
     needs:
       - code-tests
       - code-build
+    outputs:
+      manifest_update_status: ${{ steps.manifest-update.outcome }}
+      git_push_status: ${{ steps.git-push.outputs.status }}
     steps:
       - name: Code Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
@@ -267,10 +318,10 @@ jobs:
           echo "Updating deployment.yaml with image digest: ${IMAGE_DIGEST}"
           export IMAGE_DIGEST APP_VERSION
 
-          # 1. Update the image field in the deployment.yaml with the digest
+          # 2. Update the image field in the deployment.yaml with the digest
           yq eval -i '.spec.template.spec.containers[0].image = "sachinthokal/kube-traffic-lens-app@" + strenv(IMAGE_DIGEST)' kube-traffic-lens-app/deployment.yaml
 
-          # 2. Update the APP_VERSION environment variable in the deployment.yaml
+          # 3. Update the APP_VERSION environment variable in the deployment.yaml
           yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' kube-traffic-lens-app/deployment.yaml
 
       - name: Configure Git and Push Changes
@@ -288,7 +339,7 @@ jobs:
             echo "No changes to commit."
             echo "status=no-changes" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "chore(ci): update kube-traffic-lens-app image tag to ${APP_VERSION}"
+            git commit -m "chore(ci): update kube-traffic-lens-app image digest for ${APP_VERSION}"
             git push
 
             echo "status=updated-and-pushed" >> "$GITHUB_OUTPUT"
@@ -301,10 +352,9 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Pipeline Step | Status | Details |" >> "$GITHUB_STEP_SUMMARY"
           echo "| :--- | :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Manifest Update | \({{ steps.manifest-update.outcome == 'success' && '✅ Success' || '❌ Failed' }} | deployment.yaml updated |" >> "\)GITHUB_STEP_SUMMARY"
-
+          echo "| Manifest Update | ${{ steps.manifest-update.outcome == 'success' && '✅ Success' || '❌ Failed' }} | deployment.yaml updated |" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${{ steps.git-push.outputs.status }}" == "updated-and-pushed" ]]; then
-            echo "| Git Commit & Push | ✅ Success | Pushed new tag to argocd-for-devops |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Git Commit & Push | ✅ Success | Manifest change pushed to argocd-for-devops |" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "| Git Commit & Push | ℹ️️ No Changes | Manifest already up to date |" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -312,25 +362,146 @@ jobs:
   deploy-stage:
     name: Stage Deployments
     runs-on: ubuntu-latest
-    needs: update-deployment
-    steps:
-      - name : Stage Deployment
-        run: echo "code deployment on stage env"   
+    needs:
+      - update-deployment
+      - code-build
+    outputs:
+      deploy_status: ${{ steps.deploy-stage.outcome }}
 
-  approvals-gates:
-    name: Prod Approvals Gates
-    environment: production
-    runs-on: ubuntu-latest
-    needs: deploy-stage
     steps:
-      - name: Quality & Approvals Checks
-        run: echo "code quality and approval checks before going to live"
+    - name: Stage Deployment
+      id: deploy-stage
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here (e.g., kubectl apply, helm upgrade, etc.)
+        # For example:
+        # kubectl apply -f kube-traffic-lens-app/deployment.yaml --namespace staging
+        # Or if using Helm:
+        # helm upgrade --install kube-traffic-lens-app ./kube-traffic-lens
+        echo "Staging deployment completed."
+ 
+  final-production-check:
+    name: Final Production Release Checklist
+    runs-on: ubuntu-latest
+    needs:
+    - code-quality
+    - code-build
+    - code-tests
+    - update-deployment
+    - deploy-stage
+    if: always()
+    outputs:
+      release_ready: ${{ steps.production-decision.outputs.release_ready }}
+    steps:
+      - name: Build Final Production Approval Checklist
+        id: production-decision
+        run: |
+          echo "# 🚦 Production Deployment Approval Gate Checklist" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "> **Review the release validation results below before approving production deployment.**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## 📦 Release Information" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Application | kube-traffic-lens-app |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | **PRODUCTION** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Semantic Version | ${{ needs.code-build.outputs.semver_version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Digest | \`${{ needs.code-build.outputs.digest }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## 🔐 DevSecOps Release Checklist" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Validation | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :---: |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| GitLeaks Secret Scan | ${{ needs.code-quality.outputs.gitleaks_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Pylint Code Quality | ${{ needs.code-quality.outputs.pylint_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SonarQube Quality Gate | ${{ needs.code-quality.outputs.sonarqube_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trivy Vulnerability Scan | ${{ needs.code-build.outputs.trivy_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Docker Smoke Test | ${{ needs.code-build.outputs.smoke_test_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cosign Image Signing | ${{ needs.code-build.outputs.cosign_sign_status == 'success' && '✅ Signed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| PyTest Automated Tests | ${{ needs.code-tests.outputs.pytest_status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cosign Signature Verification | ${{ needs.code-tests.outputs.cosign_verify_status == 'success' && '✅ Verified' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## 🚀 Staging Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Validation | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :---: |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| ArgoCD Manifest Update | ${{ needs.update-deployment.outputs.manifest_update_status == 'success' && '✅ Completed' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ needs.update-deployment.outputs.git_push_status }}" == "updated-and-pushed" ]]; then
+            echo "| Git Commit & Push | ✅ Updated & Pushed |" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "${{ needs.update-deployment.outputs.git_push_status }}" == "no-changes" ]]; then
+            echo "| Git Commit & Push | ℹ️ No Changes |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Git Commit & Push | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "| Staging Deployment | ${{ needs.deploy-stage.outputs.deploy_status == 'success' && '✅ Successful' || '❌ Failed' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## 🛡️ Production Release Decision" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ \
+            "${{ needs.code-quality.outputs.gitleaks_status }}" == "success" && \
+            "${{ needs.code-quality.outputs.pylint_status }}" == "success" && \
+            "${{ needs.code-quality.outputs.sonarqube_status }}" == "success" && \
+            "${{ needs.code-build.outputs.trivy_status }}" == "success" && \
+            "${{ needs.code-build.outputs.smoke_test_status }}" == "success" && \
+            "${{ needs.code-build.outputs.cosign_sign_status }}" == "success" && \
+            "${{ needs.code-tests.outputs.pytest_status }}" == "success" && \
+            "${{ needs.code-tests.outputs.cosign_verify_status }}" == "success" && \
+            "${{ needs.update-deployment.outputs.manifest_update_status }}" == "success" && \
+            "${{ needs.deploy-stage.outputs.deploy_status }}" == "success"
+          ]]; then
+            echo "release_ready=true" >> "$GITHUB_OUTPUT"
+            echo "### 🟢 RELEASE READY FOR PRODUCTION" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "All required CI/CD, security, signing, testing and staging checks have passed." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Recommendation: ✅ APPROVE**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "release_ready=false" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 RELEASE NOT READY FOR PRODUCTION" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "One or more required production gates have failed." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Recommendation: ❌ DO NOT APPROVE**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "👤 **Manual Approval Required**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the complete checklist above and approve the **production** environment only when the release is production-ready." >> "$GITHUB_STEP_SUMMARY"
 
   deploy-prod:
     name: Production Deployments
+    environment: production
+    needs: final-production-check
     runs-on: ubuntu-latest
-    needs: approvals-gates
+    if: needs.final-production-check.outputs.release_ready == 'true'
     steps:
       - name: Deploy On Production Env
-        run: echo "code deployment on production env"
+        run: |
+          echo "🚀 Production deployment placeholder"
+          echo "Production deployment will be implemented here."
+
+      - name: Production Deployment Summary
+        if: always()
+        run: |
+          echo "### 🚀 Production Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Production Deployment | 🟡 Placeholder |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | production |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | Awaiting deployment implementation |" >> "$GITHUB_STEP_SUMMARY"
   
