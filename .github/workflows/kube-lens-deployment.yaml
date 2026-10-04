@@ -322,7 +322,7 @@ jobs:
           yq eval -i '.spec.template.spec.containers[0].image = "sachinthokal/kube-traffic-lens-app@" + strenv(IMAGE_DIGEST)' kube-traffic-lens-app/deployment.yaml
 
           # 3. Update the APP_VERSION environment variable in the deployment.yaml
-          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' kube-traffic-lens-app/deployment.yaml
+          yq eval -i '(.spec.template.spec.containers[0].env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' kube-traffic-lens-app/deployment.yaml
 
       - name: Configure Git and Push Changes
         id: git-push
@@ -366,11 +366,11 @@ jobs:
       - update-deployment
       - code-build
     outputs:
-      deploy_status: ${{ steps.deploy-stage.outcome }}
+      deploy_status: ${{ steps.stage-deploy.outcome }}
 
     steps:
     - name: Stage Deployment
-      id: deploy-stage
+      id: stage-deploy
       run: |
         echo "Deploying to staging environment..."
         # Add your deployment commands here (e.g., kubectl apply, helm upgrade, etc.)
