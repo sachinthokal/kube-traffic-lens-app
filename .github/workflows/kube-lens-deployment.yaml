@@ -97,14 +97,19 @@ jobs:
           echo "Commit SHA       : ${SHORT_SHA}"
           echo "Build Version    : ${BUILD_VERSION}"
 
-      - name: Build Docker Image Locally
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          load: true
-          tags: kube-traffic-lens-app:test
-          build-args: |
-            APP_VERSION=${{ steps.vars.outputs.semver_version }}
+      # - name: Build Docker Image Locally
+      #   uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      #   with:
+      #     context: .
+      #     load: true
+      #     tags: kube-traffic-lens-app:test
+      #     build-args: |
+      #       APP_VERSION=${{ steps.vars.outputs.semver_version }}
+      
+      - name: Build Docker Image for Smoke Test
+        run: |
+          docker build --build-arg APP_VERSION=${{ steps.vars.outputs.semver_version }} \
+           -t kube-traffic-lens-app:test .
 
       - name: Run Trivy Vulnerability Scanner
         id: trivy-scan
@@ -252,20 +257,21 @@ jobs:
         run: |
           yq --version
 
-      - name: Replace Image Tag in deployment.yaml
+      - name: Replace Image in deployment.yaml with Digest
         id: manifest-update
         run: |
+          # 1. Get the image digest and app version from the previous job outputs
+          IMAGE_DIGEST="${{ needs.code-build.outputs.digest }}"
           APP_VERSION="${{ needs.code-build.outputs.semver_version }}"
-          IMAGE_TAG="${APP_VERSION}" # v1.0.0
 
-          echo "Updating deployment.yaml with image tag: ${IMAGE_TAG}"
-          export IMAGE_TAG
+          echo "Updating deployment.yaml with image digest: ${IMAGE_DIGEST}"
+          export IMAGE_DIGEST APP_VERSION
 
-          # 1. containers[0].image update karne (ud. sachinthokal/kube-traffic-lens-app:v1.0.0)
-          yq eval -i '.spec.template.spec.containers[0].image = "sachinthokal/kube-traffic-lens-app:" + strenv(IMAGE_TAG)' kube-traffic-lens-app/deployment.yaml
+          # 1. Update the image field in the deployment.yaml with the digest
+          yq eval -i '.spec.template.spec.containers[0].image = "sachinthokal/kube-traffic-lens-app@" + strenv(IMAGE_DIGEST)' kube-traffic-lens-app/deployment.yaml
 
-          # 2. env list madhe APP_VERSION update karne
-          yq eval -i '(.spec.template.spec.containers[0].env[] | select(.name == "APP_VERSION") | .value) = strenv(IMAGE_TAG)' kube-traffic-lens-app/deployment.yaml
+          # 2. Update the APP_VERSION environment variable in the deployment.yaml
+          yq eval -i '(.env[] | select(.name == "APP_VERSION") | .value) = strenv(APP_VERSION)' kube-traffic-lens-app/deployment.yaml
 
       - name: Configure Git and Push Changes
         id: git-push
